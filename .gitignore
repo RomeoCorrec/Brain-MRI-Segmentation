@@ -207,3 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 data/
+
+MRI_seg/
+runs/
+yolo_dataset
+*.pt

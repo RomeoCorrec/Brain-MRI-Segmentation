@@ -1,0 +1,7 @@
+
+path: c:\Users\romeo\Documents\Projets_ENS\Brain-MRI-Segmentation\yolo_dataset # Chemin absolu vers le dossier dataset
+train: images/train
+val: images/val
+
+names:
+  0: tumor
