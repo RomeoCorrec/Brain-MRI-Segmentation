@@ -212,3 +212,11 @@ MRI_seg/
 runs/
 yolo_dataset
 *.pt
+!yolov8n-seg.pt
+
+# MLFlow
+mlruns/
+
+# Training outputs
+best_unet.pth
+curves.png
