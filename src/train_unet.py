@@ -49,8 +49,7 @@ def build_dataframes(data_dir):
     df = pd.DataFrame(data_list)
     df['patient_id'] = df['image_path'].apply(lambda x: os.path.dirname(x))
     patient_ids = df['patient_id'].unique()
-    train_ids, temp_ids = train_test_split(patient_ids, test_size=0.2, random_state=42)
-    val_ids, _ = train_test_split(temp_ids, test_size=0.5, random_state=42)
+    train_ids, val_ids = train_test_split(patient_ids, test_size=0.2, random_state=42)
     train_df = df[df['patient_id'].isin(train_ids)].reset_index(drop=True)
     val_df = df[df['patient_id'].isin(val_ids)].reset_index(drop=True)
     return train_df, val_df
@@ -127,9 +126,9 @@ def train(cfg):
             train_loss = 0.0
             for images, masks in train_loader:
                 images, masks = images.to(device), masks.to(device)
+                optimizer.zero_grad()
                 outputs = model(images)
                 loss = criterion(outputs, masks)
-                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item()
@@ -163,14 +162,15 @@ def train(cfg):
 
             if avg_val < best_val_loss:
                 best_val_loss = avg_val
-                torch.save(model.state_dict(), "best_unet.pth")
+                torch.save(model.state_dict(), os.path.join(cfg['output_dir'], "best_unet.pth"))
                 print("  -> Meilleur modèle sauvegardé")
 
         # --- Artifacts & Model Registry ---
-        save_curves(train_losses, val_losses, val_dices, "curves.png")
-        mlflow.log_artifact("curves.png")
+        curves_path = os.path.join(cfg['output_dir'], "curves.png")
+        save_curves(train_losses, val_losses, val_dices, curves_path)
+        mlflow.log_artifact(curves_path)
 
-        model.load_state_dict(torch.load("best_unet.pth", map_location=device))
+        model.load_state_dict(torch.load(os.path.join(cfg['output_dir'], "best_unet.pth"), map_location=device))
         mlflow.pytorch.log_model(
             model,
             artifact_path="model",
@@ -189,6 +189,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--data-dir", default="data")
+    parser.add_argument("--output-dir", default=".", help="Directory for saving best_unet.pth and curves.png")
     args = parser.parse_args()
 
     cfg = {
@@ -199,5 +200,6 @@ if __name__ == "__main__":
         "epochs": args.epochs,
         "image_size": args.image_size,
         "data_dir": args.data_dir,
+        "output_dir": args.output_dir,
     }
     train(cfg)
