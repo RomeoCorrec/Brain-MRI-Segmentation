@@ -23,6 +23,10 @@ class MRIDataset(Dataset):
             augmented = self.transform(image=image, mask=mask)
             image = augmented['image']
             mask = augmented['mask']
+            if not isinstance(mask, torch.Tensor):
+                mask = torch.from_numpy(mask).float()
+            if not isinstance(image, torch.Tensor):
+                image = torch.from_numpy(image).float().permute(2, 0, 1) / 255.0
         else:
             image = torch.from_numpy(image).float().permute(2, 0, 1) / 255.0
             mask = torch.from_numpy(mask).float().unsqueeze(0) / 255.0

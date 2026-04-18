@@ -57,3 +57,20 @@ def test_calculate_dice_zero():
     targets = torch.tensor([[[[0.0, 0.0]]]])
     score = calculate_dice(logits, targets)
     assert score == 0.0
+
+
+def test_dataset_with_transform(tmp_path):
+    import albumentations as A
+    from albumentations.pytorch import ToTensorV2
+    df = make_fake_df(tmp_path, n=2)
+    transform = A.Compose([
+        A.Resize(32, 32),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ToTensorV2(),
+    ])
+    ds = MRIDataset(df, transform=transform)
+    image, mask = ds[0]
+    assert image.shape == (3, 32, 32)
+    assert mask.shape == (1, 32, 32)
+    assert isinstance(image, torch.Tensor)
+    assert isinstance(mask, torch.Tensor)
