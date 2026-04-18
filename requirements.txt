@@ -85,3 +85,5 @@ ultralytics==8.3.239
 ultralytics-thop==2.0.18
 urllib3==2.6.2
 wcwidth==0.2.14
+mlflow==2.14.3
+boto3==1.38.0
