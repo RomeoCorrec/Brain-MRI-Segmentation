@@ -210,7 +210,8 @@ data/
 
 MRI_seg/
 runs/
-yolo_dataset
+yolo_dataset/
+brain_tumor.yaml
 *.pt
 !yolov8n-seg.pt
 
