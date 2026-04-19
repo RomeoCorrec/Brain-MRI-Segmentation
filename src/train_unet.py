@@ -47,6 +47,8 @@ def build_dataframes(data_dir):
         for m in mask_files
     ]
     df = pd.DataFrame(data_list)
+    if df.empty:
+        raise ValueError(f"No mask files found under '{data_dir}/*/*_mask.tif'. Check --data-dir.")
     df['patient_id'] = df['image_path'].apply(lambda x: os.path.dirname(x))
     patient_ids = df['patient_id'].unique()
     train_ids, val_ids = train_test_split(patient_ids, test_size=0.2, random_state=42)
@@ -119,6 +121,7 @@ def train(cfg):
 
         train_losses, val_losses, val_dices = [], [], []
         best_val_loss = float('inf')
+        best_state = None
 
         for epoch in range(cfg['epochs']):
             # --- Train ---
@@ -162,7 +165,8 @@ def train(cfg):
 
             if avg_val < best_val_loss:
                 best_val_loss = avg_val
-                torch.save(model.state_dict(), os.path.join(cfg['output_dir'], "best_unet.pth"))
+                best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                torch.save(best_state, os.path.join(cfg['output_dir'], "best_unet.pth"))
                 print("  -> Meilleur modèle sauvegardé")
 
         # --- Artifacts & Model Registry ---
@@ -170,7 +174,7 @@ def train(cfg):
         save_curves(train_losses, val_losses, val_dices, curves_path)
         mlflow.log_artifact(curves_path)
 
-        model.load_state_dict(torch.load(os.path.join(cfg['output_dir'], "best_unet.pth"), map_location=device))
+        model.load_state_dict(best_state)
         mlflow.pytorch.log_model(
             model,
             artifact_path="model",

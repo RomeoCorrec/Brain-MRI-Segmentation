@@ -40,8 +40,10 @@ class MRIDataset(Dataset):
         return image, mask
 
 
-def calculate_dice(logits, targets):
+def calculate_dice(logits, targets, eps=1e-8):
     probs = torch.sigmoid(logits)
     preds = (probs > 0.5).float()
-    intersection = (preds * targets).sum()
-    return (2. * intersection / (preds.sum() + targets.sum() + 1e-8)).item()
+    dims = (1, 2, 3)
+    intersection = (preds * targets).sum(dim=dims)
+    score = 2.0 * intersection / (preds.sum(dim=dims) + targets.sum(dim=dims) + eps)
+    return score.mean().item()

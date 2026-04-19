@@ -59,6 +59,15 @@ def test_calculate_dice_zero():
     assert score == 0.0
 
 
+def test_calculate_dice_both_empty():
+    # both predictions and targets are empty — exercises the eps denominator path
+    logits = torch.tensor([[[[-10.0, -10.0]]]])
+    targets = torch.tensor([[[[0.0, 0.0]]]])
+    score = calculate_dice(logits, targets)
+    assert not torch.isnan(torch.tensor(score))
+    assert score == 0.0
+
+
 def test_dataset_with_transform(tmp_path):
     import albumentations as A
     from albumentations.pytorch import ToTensorV2

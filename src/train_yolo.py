@@ -28,7 +28,10 @@ def train(cfg):
     mlflow.set_tracking_uri(cfg['tracking_uri'])
     mlflow.set_experiment("YOLOv8-Segmentation")
 
+    autolog_run = mlflow.last_active_run()
     with mlflow.start_run(run_name="model-registration"):
+        if autolog_run:
+            mlflow.set_tag("source_run_id", autolog_run.info.run_id)
         mlflow.log_param("source_weights", str(best_weights))
         mlflow.pytorch.log_model(
             best_model.model,
