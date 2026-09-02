@@ -77,6 +77,7 @@ def save_curves(train_losses, val_losses, val_dices, path="curves.png"):
 
 
 def train(cfg):
+    os.makedirs(cfg['output_dir'], exist_ok=True)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
