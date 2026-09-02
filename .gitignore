@@ -208,6 +208,19 @@ __marimo__/
 
 data/
 
+# Pretrained weights (downloaded on demand by Ultralytics)
+yolov8*.pt
+
+# Local training venv
+MRI_seg/
+
+# Job postings / personal docs
+*.pdf
+
+# Training outputs
+outputs/
+eval/
+
 MRI_seg/
 runs/
 yolo_dataset/
