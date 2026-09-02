@@ -179,12 +179,16 @@ def train(cfg):
         mlflow.log_artifact(curves_path)
 
         model.load_state_dict(best_state)
-        mlflow.pytorch.log_model(
-            model,
-            artifact_path="model",
-            registered_model_name="unet-brain-mri",
-        )
-        print("Modèle enregistré dans le registry MLFlow sous 'unet-brain-mri'")
+        try:
+            mlflow.pytorch.log_model(
+                model,
+                artifact_path="model",
+                registered_model_name="unet-brain-mri",
+            )
+            print("Modèle enregistré dans le registry MLFlow sous 'unet-brain-mri'")
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] enregistrement registry ignoré (client/serveur MLflow ?) : {e}")
+            print(f"      Les poids restent disponibles : {os.path.join(cfg['output_dir'], 'best_unet.pth')}")
 
 
 if __name__ == "__main__":
