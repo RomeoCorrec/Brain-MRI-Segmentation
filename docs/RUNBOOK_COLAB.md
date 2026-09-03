@@ -1,7 +1,8 @@
 # Runbook — obtenir les résultats (entraînement Colab GPU)
 
 Objectif : produire les métriques, courbes et figures pour la présentation.
-Durée : ~1 h 15 (UNet 30 ep ≈ 25 min + YOLO 30 ep ≈ 17 min + évaluation).
+Durée : ~1 h (early stopping — UNet et YOLO s'arrêtent quand la validation
+stagne : `--patience` 12 / 15 epochs, plafond 100). Compter ~25-40 min par modèle.
 
 > `mlflow` est volontairement épinglé `<3` dans le notebook : le serveur Docker
 > tourne en 2.14.3 et un client 3.x échoue en 404 sur `/api/2.0/mlflow/logged-models`

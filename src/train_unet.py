@@ -118,14 +118,19 @@ def train(cfg):
             "encoder": cfg['encoder'],
             "lr": cfg['lr'],
             "batch_size": cfg['batch_size'],
-            "epochs": cfg['epochs'],
+            "max_epochs": cfg['epochs'],
+            "patience": cfg['patience'],
+            "min_delta": cfg['min_delta'],
+            "early_stop_monitor": "val_dice",
             "image_size": cfg['image_size'],
             "optimizer": "adam",
         })
 
         train_losses, val_losses, val_dices = [], [], []
-        best_val_loss = float('inf')
+        best_dice = -1.0
         best_state = None
+        best_epoch = 0
+        epochs_no_improve = 0
 
         for epoch in range(cfg['epochs']):
             # --- Train ---
@@ -167,11 +172,27 @@ def train(cfg):
                 f"train_loss={avg_train:.4f} | val_loss={avg_val:.4f} | val_dice={avg_dice:.4f}"
             )
 
-            if avg_val < best_val_loss:
-                best_val_loss = avg_val
+            if avg_dice > best_dice + cfg['min_delta']:
+                best_dice = avg_dice
+                best_epoch = epoch + 1
                 best_state = {k: v.clone() for k, v in model.state_dict().items()}
                 torch.save(best_state, os.path.join(cfg['output_dir'], "best_unet.pth"))
-                print("  -> Meilleur modèle sauvegardé")
+                epochs_no_improve = 0
+                print(f"  -> meilleur modèle sauvegardé (val_dice={best_dice:.4f})")
+            else:
+                epochs_no_improve += 1
+                if cfg['patience'] and epochs_no_improve >= cfg['patience']:
+                    print(
+                        f"Early stopping : val_dice sans amélioration depuis "
+                        f"{cfg['patience']} epochs (meilleur : {best_dice:.4f} @ epoch {best_epoch})"
+                    )
+                    break
+
+        mlflow.log_metrics({
+            "best_epoch": best_epoch,
+            "stopped_epoch": epoch + 1,
+            "best_val_dice": best_dice,
+        })
 
         # --- Artifacts & Model Registry ---
         curves_path = os.path.join(cfg['output_dir'], "curves.png")
@@ -198,7 +219,11 @@ if __name__ == "__main__":
     parser.add_argument("--encoder", default="resnet34")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=100, help="Max epochs (early stopping ends it sooner)")
+    parser.add_argument("--patience", type=int, default=12,
+                        help="Stop after N epochs without val_dice improvement (0 disables)")
+    parser.add_argument("--min-delta", type=float, default=1e-4,
+                        help="Minimum val_dice gain to count as an improvement")
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--output-dir", default=".", help="Directory for saving best_unet.pth and curves.png")
@@ -210,6 +235,8 @@ if __name__ == "__main__":
         "lr": args.lr,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
+        "patience": args.patience,
+        "min_delta": args.min_delta,
         "image_size": args.image_size,
         "data_dir": args.data_dir,
         "output_dir": args.output_dir,

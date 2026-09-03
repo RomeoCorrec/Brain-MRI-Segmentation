@@ -18,6 +18,7 @@ def train(cfg):
     results = model.train(
         data=cfg['data'],
         epochs=cfg['epochs'],
+        patience=cfg['patience'],  # early stopping: N epochs without fitness gain
         imgsz=cfg['imgsz'],
         batch=cfg['batch'],
         name='mri_yolo_experiment',
@@ -56,7 +57,9 @@ if __name__ == "__main__":
                         help="URI du serveur MLFlow (ex: https://xxxx.ngrok-free.app)")
     parser.add_argument("--model", default="yolov8n-seg.pt")
     parser.add_argument("--data", default="brain_tumor.yaml")
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=100, help="Max epochs (early stopping ends it sooner)")
+    parser.add_argument("--patience", type=int, default=15,
+                        help="Stop after N epochs without validation fitness improvement")
     parser.add_argument("--imgsz", type=int, default=256)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--output-dir", default=".", help="Directory for saving best_yolo.pt")
@@ -67,6 +70,7 @@ if __name__ == "__main__":
         "model": args.model,
         "data": args.data,
         "epochs": args.epochs,
+        "patience": args.patience,
         "imgsz": args.imgsz,
         "batch": args.batch,
         "output_dir": args.output_dir,
