@@ -40,10 +40,16 @@ class MRIDataset(Dataset):
         return image, mask
 
 
-def calculate_dice(logits, targets, eps=1e-8):
+def calculate_dice(logits, targets, eps=1e-7):
+    """Smooth Dice, averaged over the batch.
+
+    The eps is added to *both* numerator and denominator so that a slice with
+    no tumour that is correctly predicted empty scores 1.0 (not 0.0). This keeps
+    the training metric consistent with src/evaluate.py.
+    """
     probs = torch.sigmoid(logits)
     preds = (probs > 0.5).float()
     dims = (1, 2, 3)
     intersection = (preds * targets).sum(dim=dims)
-    score = 2.0 * intersection / (preds.sum(dim=dims) + targets.sum(dim=dims) + eps)
+    score = (2.0 * intersection + eps) / (preds.sum(dim=dims) + targets.sum(dim=dims) + eps)
     return score.mean().item()

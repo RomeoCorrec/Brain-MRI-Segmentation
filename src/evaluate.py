@@ -90,17 +90,23 @@ def profile_torch(model, sample, device, n_warmup=5, n_iter=50):
 
 
 def try_export_onnx(model, sample, path, device):
-    try:
-        torch.onnx.export(
-            model.to(device).eval(), sample.to(device), path,
-            input_names=["input"], output_names=["output"],
-            dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-            opset_version=17,
-        )
-        size_mb = os.path.getsize(path) / 1e6
-        return {"onnx_path": path, "onnx_size_mb": round(size_mb, 2)}
-    except Exception as e:  # noqa: BLE001
-        return {"onnx_error": str(e)[:300]}
+    kwargs = dict(
+        input_names=["input"], output_names=["output"],
+        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
+        opset_version=17,
+    )
+    m, x = model.to(device).eval(), sample.to(device)
+    # Newer torch defaults to the dynamo exporter (needs onnxscript); fall back
+    # to the legacy TorchScript exporter which has no extra dependency.
+    for extra in ({"dynamo": False}, {}):
+        try:
+            torch.onnx.export(m, x, path, **kwargs, **extra)
+            return {"onnx_path": path, "onnx_size_mb": round(os.path.getsize(path) / 1e6, 2)}
+        except TypeError:
+            continue
+        except Exception as e:  # noqa: BLE001
+            return {"onnx_error": str(e)[:300]}
+    return {"onnx_error": "export failed"}
 
 
 def profile_onnx(path, sample_np, n_warmup=5, n_iter=50):

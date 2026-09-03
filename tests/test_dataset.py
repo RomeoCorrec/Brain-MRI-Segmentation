@@ -53,19 +53,20 @@ def test_calculate_dice_perfect():
 
 
 def test_calculate_dice_zero():
+    # prediction is all foreground, target is empty -> no overlap
     logits = torch.tensor([[[[10.0, 10.0]]]])
     targets = torch.tensor([[[[0.0, 0.0]]]])
     score = calculate_dice(logits, targets)
-    assert score == 0.0
+    assert score < 1e-4
 
 
 def test_calculate_dice_both_empty():
-    # both predictions and targets are empty — exercises the eps denominator path
+    # both prediction and target are empty -> correct negative -> perfect score
     logits = torch.tensor([[[[-10.0, -10.0]]]])
     targets = torch.tensor([[[[0.0, 0.0]]]])
     score = calculate_dice(logits, targets)
     assert not torch.isnan(torch.tensor(score))
-    assert score == 0.0
+    assert abs(score - 1.0) < 1e-4
 
 
 def test_dataset_with_transform(tmp_path):
