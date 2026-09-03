@@ -1,7 +1,11 @@
 # Runbook — obtenir les résultats (entraînement Colab GPU)
 
 Objectif : produire les métriques, courbes et figures pour la présentation.
-Durée : ~1 h (UNet 30 ep + YOLO 10 ep + évaluation).
+Durée : ~1 h 15 (UNet 30 ep ≈ 25 min + YOLO 30 ep ≈ 17 min + évaluation).
+
+> `mlflow` est volontairement épinglé `<3` dans le notebook : le serveur Docker
+> tourne en 2.14.3 et un client 3.x échoue en 404 sur `/api/2.0/mlflow/logged-models`
+> au moment d'enregistrer les modèles dans le registry.
 
 ## A. Sur le PC local — démarrer le suivi d'expériences
 
@@ -30,7 +34,8 @@ Runtime : **GPU** (Exécution → Modifier le type d'exécution → T4).
 |---|---|
 | 2 | Coller l'URL ngrok dans `TRACKING_URI`. Laisser les hyperparamètres par défaut. |
 | 4 | Clone du repo. **Pousser d'abord la branche à jour sur GitHub** (voir C). |
-| 5 | Installe les dépendances. **Puis : Exécution → Redémarrer la session** (obligatoire, conflit numpy). |
+| 5 | Installe les dépendances. **Puis : Exécution → Redémarrer la session** (obligatoire, conflit numpy). Ne pas rejouer cette cellule après le redémarrage. |
+| 2 (bis) | **Après le redémarrage**, ré-exécuter la cellule 2 (les variables Python sont perdues). |
 | 6 | Reprendre ici. Vérifie `GPU disponible : True`. |
 | 8–9 | Upload `kaggle.json` (kaggle.com/settings → API → Create New Token), télécharge TCGA. |
 | 12 | Vérifie la connexion MLflow (doit lister les expériences, vide au 1er run). |
