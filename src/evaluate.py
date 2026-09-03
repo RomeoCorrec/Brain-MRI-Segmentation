@@ -32,6 +32,7 @@ from src.train_unet import build_dataframes, IMAGENET_MEAN, IMAGENET_STD
 
 IMG_SIZE = 256
 EPS = 1e-7
+SLICE_AREA_THR = 10  # a slice counts as "predicted positive" above this many pixels
 
 
 # --------------------------------------------------------------------------- #
@@ -46,6 +47,33 @@ def dice_iou(pred: np.ndarray, gt: np.ndarray):
     dice = (2 * inter + EPS) / (p.sum() + g.sum() + EPS)
     iou = (inter + EPS) / (union + EPS)
     return float(dice), float(iou)
+
+
+def tp_fp_fn(pred: np.ndarray, gt: np.ndarray):
+    p = pred.astype(bool)
+    g = gt.astype(bool)
+    return (int(np.logical_and(p, g).sum()),
+            int(np.logical_and(p, ~g).sum()),
+            int(np.logical_and(~p, g).sum()))
+
+
+def _prf(tp, fp, fn):
+    prec = tp / (tp + fp) if (tp + fp) else 0.0
+    rec = tp / (tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
+    return {"precision": round(prec, 4), "recall": round(rec, 4), "f1": round(f1, 4)}
+
+
+def _slice_stats(tp, fp, fn, tn):
+    sens = tp / (tp + fn) if (tp + fn) else 0.0
+    spec = tn / (tn + fp) if (tn + fp) else 0.0
+    prec = tp / (tp + fp) if (tp + fp) else 0.0
+    f1 = 2 * prec * sens / (prec + sens) if (prec + sens) else 0.0
+    fpr = fp / (fp + tn) if (fp + tn) else 0.0
+    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn,
+            "sensitivity": round(sens, 4), "specificity": round(spec, 4),
+            "precision": round(prec, 4), "f1": round(f1, 4),
+            "false_positive_rate": round(fpr, 4)}
 
 
 # --------------------------------------------------------------------------- #
@@ -170,6 +198,10 @@ def evaluate(cfg):
 
     per_image = []
     qualitative = []  # (rgb, gt, unet, yolo) for a few tumor slices
+    # accumulators: [tp, fp, fn] pixels (all slices) / (tumor slices) ; [tp, fp, fn, tn] slice-level
+    pix = {"unet": [0, 0, 0], "yolo": [0, 0, 0]}
+    pix_t = {"unet": [0, 0, 0], "yolo": [0, 0, 0]}
+    sl = {"unet": [0, 0, 0, 0], "yolo": [0, 0, 0, 0]}
     for _, row in val_df.iterrows():
         rgb = load_image(row["image_path"])
         gt = load_gt_mask(row["mask_path"])
@@ -182,7 +214,24 @@ def evaluate(cfg):
                "unet_dice": du, "unet_iou": iu,
                "yolo_dice": dy, "yolo_iou": iy}
         per_image.append(rec)
-        if gt.sum() > 0 and len(qualitative) < cfg["n_qualitative"]:
+
+        gt_pos = gt.sum() > 0
+        for key, pred in (("unet", u), ("yolo", y)):
+            tp, fp, fn = tp_fp_fn(pred, gt)
+            pix[key][0] += tp; pix[key][1] += fp; pix[key][2] += fn
+            if gt_pos:
+                pix_t[key][0] += tp; pix_t[key][1] += fp; pix_t[key][2] += fn
+            pred_pos = int(pred.sum()) >= SLICE_AREA_THR
+            if gt_pos and pred_pos:
+                sl[key][0] += 1
+            elif (not gt_pos) and pred_pos:
+                sl[key][1] += 1
+            elif gt_pos and (not pred_pos):
+                sl[key][2] += 1
+            else:
+                sl[key][3] += 1
+
+        if gt_pos and len(qualitative) < cfg["n_qualitative"]:
             qualitative.append((cv2.resize(rgb, (IMG_SIZE, IMG_SIZE)), gt * 255, u * 255, y * 255))
 
     arr = {k: np.array([r[k] for r in per_image]) for k in
@@ -223,10 +272,14 @@ def evaluate(cfg):
         "note": "YOLO trained on an image-level split (prepare_yolo_dataset.py); "
                 "some of these patient-level val slices may have been in YOLO's train set. "
                 "Fix: make prepare_yolo_dataset reuse the patient-level split.",
+        "slice_area_threshold_px": SLICE_AREA_THR,
         "unet": {
             "params_M": round(unet_params / 1e6, 2),
             "dice_all": agg("unet_dice"), "iou_all": agg("unet_iou"),
             "dice_tumor_only": agg("unet_dice", tumor), "iou_tumor_only": agg("unet_iou", tumor),
+            "pixel_pr_all_slices": _prf(*pix["unet"]),
+            "pixel_pr_tumor_slices": _prf(*pix_t["unet"]),
+            "slice_detection": _slice_stats(*sl["unet"]),
             "torch_latency_ms": round(unet_lat, 2),
             **onnx_info,
         },
@@ -234,6 +287,9 @@ def evaluate(cfg):
             "params_M": round(yolo_params / 1e6, 2),
             "dice_all": agg("yolo_dice"), "iou_all": agg("yolo_iou"),
             "dice_tumor_only": agg("yolo_dice", tumor), "iou_tumor_only": agg("yolo_iou", tumor),
+            "pixel_pr_all_slices": _prf(*pix["yolo"]),
+            "pixel_pr_tumor_slices": _prf(*pix_t["yolo"]),
+            "slice_detection": _slice_stats(*sl["yolo"]),
             "torch_latency_ms": round(yolo_lat, 2),
             **yolo_onnx_info,
         },
@@ -251,6 +307,7 @@ def evaluate(cfg):
 
     _plot_qualitative(qualitative, os.path.join(cfg["output_dir"], "qualitative.png"))
     _plot_dice_hist(arr, tumor, os.path.join(cfg["output_dir"], "dice_distribution.png"))
+    _plot_slice_detection(summary, os.path.join(cfg["output_dir"], "slice_detection.png"))
 
     if cfg["tracking_uri"]:
         _log_mlflow(cfg["tracking_uri"], summary, cfg["output_dir"])
@@ -260,6 +317,8 @@ def evaluate(cfg):
 
 def _markdown_table(s):
     u, y = s["unet"], s["yolo"]
+    ud, yd = u["slice_detection"], y["slice_detection"]
+    upt, ypt = u["pixel_pr_tumor_slices"], y["pixel_pr_tumor_slices"]
     lines = [
         "| Métrique (val commune) | UNet-ResNet34 | YOLOv8n-seg |",
         "|---|---|---|",
@@ -267,6 +326,15 @@ def _markdown_table(s):
         f"| Dice (toutes coupes) | {u['dice_all']['mean']} | {y['dice_all']['mean']} |",
         f"| Dice (coupes avec tumeur) | {u['dice_tumor_only']['mean']} | {y['dice_tumor_only']['mean']} |",
         f"| IoU (coupes avec tumeur) | {u['iou_tumor_only']['mean']} | {y['iou_tumor_only']['mean']} |",
+        "| **Pixel — coupes avec tumeur** | | |",
+        f"| Precision pixel | {upt['precision']} | {ypt['precision']} |",
+        f"| Recall pixel | {upt['recall']} | {ypt['recall']} |",
+        "| **Détection par coupe** | | |",
+        f"| Sensibilité (coupes tumeur détectées) | {ud['sensitivity']} | {yd['sensitivity']} |",
+        f"| Spécificité (coupes saines OK) | {ud['specificity']} | {yd['specificity']} |",
+        f"| Taux de faux positifs (coupes saines) | {ud['false_positive_rate']} | {yd['false_positive_rate']} |",
+        f"| F1 détection | {ud['f1']} | {yd['f1']} |",
+        "| **Coût** | | |",
         f"| Latence PyTorch ({s['device']}) | {u['torch_latency_ms']} ms | {y['torch_latency_ms']} ms |",
         f"| Latence ONNX (CPU) | {u.get('onnx_cpu_latency_ms', 'n/a')} ms | {y.get('onnx_cpu_latency_ms', 'n/a')} ms |",
         f"| Taille ONNX | {u.get('onnx_size_mb', 'n/a')} MB | {y.get('onnx_size_mb', 'n/a')} MB |",
@@ -307,6 +375,32 @@ def _plot_dice_hist(arr, tumor, path):
     print(f"Saved {path}")
 
 
+def _plot_slice_detection(summary, path):
+    labels = ["Sensibilité\n(coupes tumeur)", "Spécificité\n(coupes saines)",
+              "Taux faux positifs\n(coupes saines)"]
+    u, y = summary["unet"]["slice_detection"], summary["yolo"]["slice_detection"]
+    uv = [u["sensitivity"], u["specificity"], u["false_positive_rate"]]
+    yv = [y["sensitivity"], y["specificity"], y["false_positive_rate"]]
+    x = np.arange(len(labels))
+    w = 0.36
+    fig, ax = plt.subplots(figsize=(9, 4.4))
+    b1 = ax.bar(x - w / 2, uv, w, label="UNet", color="steelblue")
+    b2 = ax.bar(x + w / 2, yv, w, label="YOLOv8n", color="salmon")
+    ax.set_ylim(0, 1.05)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_title("Détection par coupe — seuil "
+                 f"{summary['slice_area_threshold_px']} px "
+                 f"(n={summary['n_val_slices']} coupes, {summary['n_val_tumor_slices']} avec tumeur)")
+    ax.legend()
+    for bars in (b1, b2):
+        ax.bar_label(bars, fmt="%.3f", padding=3, fontsize=9)
+    plt.tight_layout()
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f"Saved {path}")
+
+
 def _log_mlflow(uri, summary, output_dir):
     import mlflow
     mlflow.set_tracking_uri(uri)
@@ -314,11 +408,18 @@ def _log_mlflow(uri, summary, output_dir):
     with mlflow.start_run(run_name="common-metric-evaluation"):
         for model_key in ("unet", "yolo"):
             m = summary[model_key]
+            sd = m["slice_detection"]
             mlflow.log_metric(f"{model_key}_dice_tumor", m["dice_tumor_only"]["mean"])
             mlflow.log_metric(f"{model_key}_iou_tumor", m["iou_tumor_only"]["mean"])
+            mlflow.log_metric(f"{model_key}_pixel_precision_tumor", m["pixel_pr_tumor_slices"]["precision"])
+            mlflow.log_metric(f"{model_key}_pixel_recall_tumor", m["pixel_pr_tumor_slices"]["recall"])
+            mlflow.log_metric(f"{model_key}_slice_sensitivity", sd["sensitivity"])
+            mlflow.log_metric(f"{model_key}_slice_specificity", sd["specificity"])
+            mlflow.log_metric(f"{model_key}_slice_fpr", sd["false_positive_rate"])
             mlflow.log_metric(f"{model_key}_latency_ms", m["torch_latency_ms"])
             mlflow.log_metric(f"{model_key}_params_M", m["params_M"])
-        for fn in ("eval_summary.json", "eval_table.md", "qualitative.png", "dice_distribution.png"):
+        for fn in ("eval_summary.json", "eval_table.md", "qualitative.png",
+                   "dice_distribution.png", "slice_detection.png"):
             p = os.path.join(output_dir, fn)
             if os.path.exists(p):
                 mlflow.log_artifact(p)
