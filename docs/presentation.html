@@ -254,9 +254,9 @@
           <h3><span class="tag">A —</span> Segmentation sémantique</h3>
           <ul>
             <li><b>UNet</b>, encodeur ResNet34 pré-entraîné ImageNet</li>
-            <li>Sortie <b>pixel</b> (masque dense), perte BCE</li>
+            <li>Sortie <b>pixel</b> — masque de probabilité dense</li>
+            <li>Perte <b>BCE</b> — cross-entropy binaire, par pixel</li>
             <li>24,4 M paramètres · 30 epochs</li>
-            <li>Suivi MLflow manuel (params, métriques, courbes)</li>
           </ul>
         </div>
         <div class="panel">
@@ -264,15 +264,16 @@
           <ul>
             <li><b>YOLOv8n-seg</b>, pré-entraîné COCO</li>
             <li>Sortie <b>polygone</b> + tête de détection (seuil de confiance)</li>
+            <li>Perte <b>composite</b> — boîte + masque + classe + DFL</li>
             <li>3,3 M paramètres · 30 epochs</li>
-            <li>Autolog MLflow via le callback Ultralytics</li>
           </ul>
         </div>
       </div>
-      <p style="margin-top:1.6rem"><span class="accent">Préparation des données —</span> conversion des masques TIFF en polygones normalisés (contours OpenCV, <span style="font-family:var(--f-mono);font-size:.88em">approxPolyDP</span>), augmentation Albumentations (rotations, flips).</p>
+      <p class="callout" style="margin-top:1.3rem; border-left-color:var(--accent); background:var(--accent-wash)"><b style="color:var(--accent-ink)">Pas de loss commune possible —</b> les deux sorties sont structurellement différentes. La comparaison se fait donc <b>au niveau de la tâche</b> — même métrique, même split, même post-traitement — et non comme une étude d'ablation : elle mesure un résultat net, pas une cause isolée.</p>
+      <p style="margin-top:1.1rem"><span class="accent">Préparation des données —</span> conversion des masques TIFF en polygones normalisés (contours OpenCV, <span style="font-family:var(--f-mono);font-size:.88em">approxPolyDP</span>), augmentation Albumentations (rotations, flips).</p>
       <div class="notes">
         <span class="t">~60 s</span>
-        Le point à faire passer : ce ne sont pas deux variantes du même modèle, ce sont deux façons de poser le problème. YOLO part d'un pré-entraînement segmentation COCO, d'où sa convergence rapide — j'y reviens au slide résultats.
+        Ce ne sont pas deux variantes du même modèle, ce sont deux façons de poser le problème — d'où deux pertes différentes, qu'on ne peut pas unifier. Ce qu'on contrôle, c'est l'évaluation. Si le jury insiste : chaque modèle est entraîné correctement pour son paradigme, et BCE seule désavantage plutôt UNet sur une tâche aussi déséquilibrée.
       </div>
     </div>
   </section>
