@@ -46,6 +46,7 @@ Runtime : **GPU** (Exécution → Modifier le type d'exécution → T4).
 | 19 | Vérifie les runs + modèles enregistrés dans le registry. |
 | 21–25 | Section 7 : courbes, tableau, prédictions visuelles. |
 | 27–31 | Section 8 : évaluation métrique commune (Dice/IoU pixel) + export ONNX + latence. |
+| 32–33 | Section 9 : zippe tous les livrables et les télécharge en un clic. |
 
 ## C. Pré-requis : pousser le code à jour
 
@@ -58,7 +59,8 @@ git push origin main
 
 ## D. Récupérer les livrables pour les slides
 
-Depuis Colab (`Fichiers` dans le panneau latéral, ou `files.download(...)`) :
+La **cellule 33** (section 9) rassemble tout ça dans `deliverables.zip` et le
+télécharge automatiquement. Détail des fichiers :
 
 | Fichier | Usage slide |
 |---|---|
