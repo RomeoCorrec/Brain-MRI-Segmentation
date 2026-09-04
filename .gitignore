@@ -234,3 +234,7 @@ mlruns/
 # Training outputs
 best_unet.pth
 curves.png
+
+# Colab deliverables bundle (section 9)
+deliverables.zip
+deliverables/

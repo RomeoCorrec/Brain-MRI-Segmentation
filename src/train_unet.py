@@ -1,10 +1,8 @@
 import os
 import sys
-import glob
 import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -12,7 +10,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
@@ -20,6 +17,7 @@ import mlflow
 import mlflow.pytorch
 
 from src.dataset import MRIDataset, calculate_dice
+from src.split import build_dataframes
 
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -41,23 +39,6 @@ def get_transforms(image_size):
         ToTensorV2(),
     ])
     return train_tf, val_tf
-
-
-def build_dataframes(data_dir):
-    mask_files = glob.glob(f'{data_dir}/*/*_mask.tif')
-    data_list = [
-        {'image_path': m.replace('_mask', ''), 'mask_path': m}
-        for m in mask_files
-    ]
-    df = pd.DataFrame(data_list)
-    if df.empty:
-        raise ValueError(f"No mask files found under '{data_dir}/*/*_mask.tif'. Check --data-dir.")
-    df['patient_id'] = df['image_path'].apply(lambda x: os.path.dirname(x))
-    patient_ids = df['patient_id'].unique()
-    train_ids, val_ids = train_test_split(patient_ids, test_size=0.2, random_state=42)
-    train_df = df[df['patient_id'].isin(train_ids)].reset_index(drop=True)
-    val_df = df[df['patient_id'].isin(val_ids)].reset_index(drop=True)
-    return train_df, val_df
 
 
 def save_curves(train_losses, val_losses, val_dices, path="curves.png"):

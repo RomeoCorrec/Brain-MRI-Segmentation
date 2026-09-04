@@ -28,7 +28,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from src.train_unet import build_dataframes, IMAGENET_MEAN, IMAGENET_STD
+from src.split import build_dataframes
+from src.train_unet import IMAGENET_MEAN, IMAGENET_STD
 
 IMG_SIZE = 256
 EPS = 1e-7
@@ -269,9 +270,10 @@ def evaluate(cfg):
         "device": device,
         "n_val_slices": len(per_image),
         "n_val_tumor_slices": int(tumor.sum()),
-        "note": "YOLO trained on an image-level split (prepare_yolo_dataset.py); "
-                "some of these patient-level val slices may have been in YOLO's train set. "
-                "Fix: make prepare_yolo_dataset reuse the patient-level split.",
+        "note": "UNet and YOLO share the same patient-level split (src/split.py): "
+                "no validation slice comes from a patient either model trained on. "
+                "Re-run prepare_yolo_dataset.py + train_yolo.py if the YOLO weights "
+                "predate this change.",
         "slice_area_threshold_px": SLICE_AREA_THR,
         "unet": {
             "params_M": round(unet_params / 1e6, 2),

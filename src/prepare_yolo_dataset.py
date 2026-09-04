@@ -1,10 +1,10 @@
 import os
-import glob
+import sys
 import argparse
-import shutil
 import cv2
-import numpy as np
-from sklearn.model_selection import train_test_split
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.split import build_dataframes
 
 
 def mask_to_yolo_polygons(mask):
@@ -27,36 +27,35 @@ def mask_to_yolo_polygons(mask):
 
 
 def prepare(data_dir, output_dir, val_ratio=0.2, seed=42):
-    mask_paths = sorted(glob.glob(os.path.join(data_dir, "*", "*_mask.tif")))
-    if not mask_paths:
-        raise FileNotFoundError(f"No masks found in {data_dir}")
-    print(f"Found {len(mask_paths)} samples")
+    # Same patient-level split as UNet training and evaluation (src/split.py),
+    # so YOLO never trains on a slice from a patient held out for validation.
+    train_df, val_df = build_dataframes(data_dir, test_size=val_ratio, random_state=seed)
+    n_patients = len(set(train_df["patient_id"]) | set(val_df["patient_id"]))
+    print(f"{n_patients} patients | train: {len(train_df)} slices | val: {len(val_df)} slices")
 
-    train_masks, val_masks = train_test_split(mask_paths, test_size=val_ratio, random_state=seed)
-
-    for split, masks in [("train", train_masks), ("val", val_masks)]:
+    for split, df in [("train", train_df), ("val", val_df)]:
         img_dir = os.path.join(output_dir, "images", split)
         lbl_dir = os.path.join(output_dir, "labels", split)
         os.makedirs(img_dir, exist_ok=True)
         os.makedirs(lbl_dir, exist_ok=True)
 
-        for mask_path in masks:
-            img_path = mask_path.replace("_mask.tif", ".tif")
-            if not os.path.exists(img_path):
-                continue
-
-            stem = os.path.splitext(os.path.basename(img_path))[0]
+        n_written = 0
+        for _, r in df.iterrows():
+            img_path, mask_path = r["image_path"], r["mask_path"]
             img = cv2.imread(img_path)
             if img is None:
                 continue
+
+            stem = os.path.splitext(os.path.basename(img_path))[0]
             cv2.imwrite(os.path.join(img_dir, f"{stem}.jpg"), img)
 
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
             polygons = mask_to_yolo_polygons(mask) if mask is not None else []
             with open(os.path.join(lbl_dir, f"{stem}.txt"), "w") as f:
                 f.write("\n".join(polygons))
+            n_written += 1
 
-        print(f"  {split}: {len(masks)} images written")
+        print(f"  {split}: {n_written} images written")
 
     yaml_path = os.path.join(output_dir, "brain_tumor.yaml")
     with open(yaml_path, "w") as f:

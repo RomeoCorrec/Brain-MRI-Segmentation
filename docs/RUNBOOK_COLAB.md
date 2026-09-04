@@ -85,7 +85,7 @@ docker compose down          # garde les volumes (données MLflow conservées)
 
 - L'URL ngrok change à chaque `docker compose up` → recoller dans la cellule 2.
 - Si Colab perd le GPU en cours de route, les runs déjà loggés dans MLflow sont conservés.
-- YOLO est entraîné sur un split par image (`prepare_yolo_dataset.py`), différent du
-  split par patient de UNet. `evaluate.py` le signale (`summary["note"]`). Le corriger
-  = réutiliser le split par patient — bon point « analyse des écarts entre jeux de
-  données » pour l'entretien, à mentionner comme limite identifiée.
+- UNet, YOLO et `evaluate.py` partagent le même split **par patient** (`src/split.py`) :
+  aucune coupe de validation ne provient d'un patient vu à l'entraînement. Le head-to-head
+  est donc valide. (Runs antérieurs au commit `src/split.py` : YOLO était splitté par
+  image → ses chiffres étaient optimistes ; refaire cellules 16-17 puis 28.)
