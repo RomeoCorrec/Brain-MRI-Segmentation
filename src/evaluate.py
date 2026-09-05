@@ -58,6 +58,22 @@ def tp_fp_fn(pred: np.ndarray, gt: np.ndarray):
             int(np.logical_and(~p, g).sum()))
 
 
+def _missed_lesion_area(per_image, dice_key, thr=0.10):
+    """Median GT tumour area (px) for slices the model misses vs. catches.
+
+    A large gap = the misses are concentrated on small lesions.
+    """
+    tum = [r for r in per_image if r["has_tumor"]]
+    missed = [r["gt_area_px"] for r in tum if r[dice_key] < thr]
+    caught = [r["gt_area_px"] for r in tum if r[dice_key] >= thr]
+    return {
+        "dice_threshold": thr,
+        "n_missed": len(missed),
+        "median_area_missed_px": int(np.median(missed)) if missed else None,
+        "median_area_caught_px": int(np.median(caught)) if caught else None,
+    }
+
+
 def _prf(tp, fp, fn):
     prec = tp / (tp + fp) if (tp + fp) else 0.0
     rec = tp / (tp + fn) if (tp + fn) else 0.0
@@ -212,6 +228,7 @@ def evaluate(cfg):
         dy, iy = dice_iou(y, gt)
         rec = {"image": os.path.basename(row["image_path"]),
                "has_tumor": bool(gt.sum() > 0),
+               "gt_area_px": int(gt.sum()),
                "unet_dice": du, "unet_iou": iu,
                "yolo_dice": dy, "yolo_iou": iy}
         per_image.append(rec)
@@ -282,6 +299,7 @@ def evaluate(cfg):
             "pixel_pr_all_slices": _prf(*pix["unet"]),
             "pixel_pr_tumor_slices": _prf(*pix_t["unet"]),
             "slice_detection": _slice_stats(*sl["unet"]),
+            "missed_lesion_area": _missed_lesion_area(per_image, "unet_dice"),
             "torch_latency_ms": round(unet_lat, 2),
             **onnx_info,
         },
@@ -292,6 +310,7 @@ def evaluate(cfg):
             "pixel_pr_all_slices": _prf(*pix["yolo"]),
             "pixel_pr_tumor_slices": _prf(*pix_t["yolo"]),
             "slice_detection": _slice_stats(*sl["yolo"]),
+            "missed_lesion_area": _missed_lesion_area(per_image, "yolo_dice"),
             "torch_latency_ms": round(yolo_lat, 2),
             **yolo_onnx_info,
         },
@@ -310,6 +329,7 @@ def evaluate(cfg):
     _plot_qualitative(qualitative, os.path.join(cfg["output_dir"], "qualitative.png"))
     _plot_dice_hist(arr, tumor, os.path.join(cfg["output_dir"], "dice_distribution.png"))
     _plot_slice_detection(summary, os.path.join(cfg["output_dir"], "slice_detection.png"))
+    _plot_dice_vs_area(per_image, os.path.join(cfg["output_dir"], "dice_vs_area.png"))
 
     if cfg["tracking_uri"]:
         _log_mlflow(cfg["tracking_uri"], summary, cfg["output_dir"])
@@ -321,6 +341,7 @@ def _markdown_table(s):
     u, y = s["unet"], s["yolo"]
     ud, yd = u["slice_detection"], y["slice_detection"]
     upt, ypt = u["pixel_pr_tumor_slices"], y["pixel_pr_tumor_slices"]
+    uma, yma = u["missed_lesion_area"], y["missed_lesion_area"]
     lines = [
         "| Métrique (val commune) | UNet-ResNet34 | YOLOv8n-seg |",
         "|---|---|---|",
@@ -336,6 +357,7 @@ def _markdown_table(s):
         f"| Spécificité (coupes saines OK) | {ud['specificity']} | {yd['specificity']} |",
         f"| Taux de faux positifs (coupes saines) | {ud['false_positive_rate']} | {yd['false_positive_rate']} |",
         f"| F1 détection | {ud['f1']} | {yd['f1']} |",
+        f"| Tumeur médiane — coupes ratées vs réussies (px) | {uma['median_area_missed_px']} vs {uma['median_area_caught_px']} | {yma['median_area_missed_px']} vs {yma['median_area_caught_px']} |",
         "| **Coût** | | |",
         f"| Latence PyTorch ({s['device']}) | {u['torch_latency_ms']} ms | {y['torch_latency_ms']} ms |",
         f"| Latence ONNX (CPU) | {u.get('onnx_cpu_latency_ms', 'n/a')} ms | {y.get('onnx_cpu_latency_ms', 'n/a')} ms |",
@@ -370,6 +392,38 @@ def _plot_dice_hist(arr, tumor, path):
     ax.set_xlabel("Dice (coupes avec tumeur)")
     ax.set_ylabel("Nombre de coupes")
     ax.set_title("Distribution du Dice par coupe")
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f"Saved {path}")
+
+
+def _plot_dice_vs_area(per_image, path):
+    """Per-slice Dice against ground-truth lesion size, both models.
+
+    Scatter + median trend over 8 area bins. If failures sit on the left
+    (small lesions), the trend line drops there.
+    """
+    tum = [r for r in per_image if r["has_tumor"]]
+    if not tum:
+        return
+    area = np.array([r["gt_area_px"] for r in tum], dtype=float)
+    fig, ax = plt.subplots(figsize=(8.5, 4.6))
+    for key, color, label in (("unet_dice", "steelblue", "UNet"),
+                              ("yolo_dice", "salmon", "YOLOv8")):
+        d = np.array([r[key] for r in tum])
+        ax.scatter(area, d, s=14, alpha=0.4, color=color, label=label, edgecolors="none")
+        order = np.argsort(area)
+        bins = [b for b in np.array_split(order, 8) if len(b)]
+        ax.plot([np.median(area[b]) for b in bins],
+                [np.median(d[b]) for b in bins],
+                color=color, lw=2.2)
+    ax.set_xscale("log")
+    ax.set_xlabel("Surface de la tumeur — vérité terrain (pixels, échelle log)")
+    ax.set_ylabel("Dice de la coupe")
+    ax.set_ylim(-0.03, 1.03)
+    ax.set_title("Dice par coupe vs taille de la lésion (courbe = médiane par tranche)")
     ax.legend()
     plt.tight_layout()
     plt.savefig(path, dpi=150)
@@ -421,7 +475,7 @@ def _log_mlflow(uri, summary, output_dir):
             mlflow.log_metric(f"{model_key}_latency_ms", m["torch_latency_ms"])
             mlflow.log_metric(f"{model_key}_params_M", m["params_M"])
         for fn in ("eval_summary.json", "eval_table.md", "qualitative.png",
-                   "dice_distribution.png", "slice_detection.png"):
+                   "dice_distribution.png", "slice_detection.png", "dice_vs_area.png"):
             p = os.path.join(output_dir, fn)
             if os.path.exists(p):
                 mlflow.log_artifact(p)
