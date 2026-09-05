@@ -102,7 +102,7 @@ def load_gt_mask(mask_path):
 # Latency profiling
 # --------------------------------------------------------------------------- #
 def profile_torch(model, sample, device, n_warmup=5, n_iter=50):
-    model.eval()
+    model.to(device).eval()
     x = sample.to(device)
     with torch.no_grad():
         for _ in range(n_warmup):
